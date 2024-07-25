@@ -1,5 +1,5 @@
 import numpy as np
-from matplotlib.pyplot import close, legend, plot, savefig, scatter, xlim, ylim
+from matplotlib.pyplot import close, legend, plot, savefig, scatter, xlim, ylim, axvline
 
 from measures.measures import Dirac, Measure, OneMeasure
 
@@ -27,6 +27,8 @@ class SumDirac(Measure):
             self.interval = None
         self.epsilon = None
         self.cacheValues = {}
+        self.minSupport = None
+        self.maxSupport = None
 
     def __call__(self, x):
         """
@@ -95,6 +97,12 @@ class SumDirac(Measure):
         # return the interval
         return [minInterval, maxInterval]
 
+    def isDirac(self):
+        for measure in self.List:
+            if not isinstance(measure, Dirac):
+                return False
+        return True
+
     def getDiracNumbers(self):
         """
         Get all the numbers of diracs in the sum.
@@ -149,6 +157,7 @@ class SumDirac(Measure):
         loc: str = "best",
         interval: list = None,
         setxlim: list = None,
+        inf: bool = False,
     ):
         """
         plot the measure on the interval.
@@ -172,13 +181,17 @@ class SumDirac(Measure):
         # get the numbers and sort them
         numbers = sorted(self.getDiracNumbers())
         # dicretization of the space and adding the numbers
-        x = np.sort(np.concatenate((np.arange(*self.getInterval(), 0.001), numbers)))
+        epsilon = self.getEpsilon()
+        x = np.sort(np.concatenate((np.arange(*self.getInterval(), epsilon), numbers)))
 
         # plot of the function measure
-        plot(x, sum([m(x) for m in self.List]), label=label, color=color)
+        plot(x, self(x), label=label, color=color)
         for measure in self.List:
             if isinstance(measure, Dirac):
-                scatter(measure.number, self(measure.number), color=color)
+                if inf:
+                    axvline(measure.number, color=color)
+                else:
+                    scatter(measure.number, self(measure.number), color=color)
         # crop on the interval
         if setxlim is not None:
             xlim(*setxlim)
@@ -198,6 +211,7 @@ class SumDirac(Measure):
         loc: str = "best",
         interval: list = None,
         setxlim: list = None,
+        inf: bool = False,
     ):
         """
         Save the figure
@@ -225,11 +239,39 @@ class SumDirac(Measure):
             If it is not specified, will take self.interval
         """
         # plot the measure
-        self.plot(label=label, color=color, loc=loc, interval=interval, setxlim=setxlim)
+        self.plot(
+            label=label,
+            color=color,
+            loc=loc,
+            interval=interval,
+            setxlim=setxlim,
+            inf=inf,
+        )
         # save the figure
         savefig(filename)
         # close the figure to do not get plot
         close()
+
+    def mergeDiracs(self):
+        indexes = {}
+        for index, measure in enumerate(self.List):
+            if isinstance(measure, Dirac):
+                if measure.number in indexes:
+                    indexes[measure.number].append(index)
+                else:
+                    indexes[measure.number] = [index]
+            else:
+                if "notDirac" in indexes:
+                    indexes["notDirac"].append(index)
+                else:
+                    indexes["notDirac"] = [index]
+        newList = []
+        for indexList in indexes.values():
+            sumMeasure = 0
+            for indexToMerge in indexList:
+                sumMeasure += self.List[indexToMerge]
+            newList.append(sumMeasure)
+        self.List = newList
 
     def __add__(self, other):
         """
@@ -248,10 +290,18 @@ class SumDirac(Measure):
         if isinstance(other, SumDirac):
             # combine the two lists
             newList = np.concatenate((newList, other.List.copy()))
+            µ = SumDirac(newList)
+            µ.mergeDiracs()
+            return µ
         elif isinstance(other, Measure):
             # add the new measure to the list
             newList.append(other)
+            µ = SumDirac(newList)
+            µ.mergeDiracs()
+            return µ
         else:
+            if other == 0:
+                return self
             # create the measure associated to the float
             newList.append(OneMeasure() * other)
         return SumDirac(newList)
@@ -355,6 +405,18 @@ class SumDirac(Measure):
             newList.append(other / self.List[k])
         return SumDirac(newList) """
 
+    def exp(self):
+        newList = []
+        for k in range(len(self.List)):
+            newList.append(self.List[k].exp())
+        return SumDirac(newList)
+
+    def abs(self):
+        newList = []
+        for k in range(len(self.List)):
+            newList.append(self.List[k].abs())
+        return SumDirac(newList)
+
     def __and__(self, other):
         """
         operator &
@@ -371,3 +433,14 @@ class SumDirac(Measure):
             newList.append(other & self.List[k])
         # returns the sum of the convolutions
         return sum(newList)
+
+    def random(self, N: int = 1):
+        if N == 1:
+            chooseMeasure = np.random.random()
+            sumIntegral = 0
+            for k in range(len(self.List)):
+                sumIntegral += self.List[k].integrate()
+                if chooseMeasure <= sumIntegral:
+                    return self.List[k].random()
+        else:
+            return np.array([self.random(1) for _ in range(N)])

@@ -45,8 +45,18 @@ class Measure:
 
         # if funOrList is a list a random values
         if isinstance(funOrList, list) or isinstance(funOrList, np.ndarray):
-            # compute of the density
-            self.function = np.vectorize(lambda x: gaussian_kde(funOrList)(x)[0])
+            colinearity = True
+            first_element = funOrList[0]
+            for element in funOrList:
+                if element != first_element:
+                    colinearity = False
+                    break
+            if colinearity:
+                self.function = lambda x: x == first_element * len(funOrList)
+            else:
+                # compute of the density
+                print(len(funOrList))
+                self.function = np.vectorize(lambda x: gaussian_kde(funOrList)(x)[0])
         # if funOrList is a function
         else:
             # Definition of the measure as the function
@@ -67,7 +77,7 @@ class Measure:
         -------
         float
         """
-        try:
+        if isinstance(x, list) or isinstance(x, np.ndarray):
             # we try to get the length (if x is a iterable)
             size = len(x)
             values = np.zeros(size)
@@ -75,7 +85,7 @@ class Measure:
             for i in range(size):
                 values[i] = self(x[i])
             return values
-        except:
+        else:
             # round the value of x
             x = round(x, self.precision)
             # if x is a float we check if we saved the value
@@ -316,7 +326,10 @@ class Measure:
         Measure
             returns exp(Measure).
         """
-        return Measure(lambda x: np.exp(self(x)), self.interval)
+        return Measure(lambda x: np.exp(self(x)), self.getInterval())
+
+    def abs(self):
+        return Measure(lambda x: np.abs(self(x)), self.getInterval())
 
     def copy(self, precision: float = 0.001):
         """
@@ -344,7 +357,7 @@ class Measure:
         # create and return of the new measure
         return Measure(np.vectorize(r), self.interval.copy())
 
-    def integrate(self, f=lambda x: 1, interval: list = None, epsilon: float = 0.001):
+    def integrate(self, f=lambda x: 1, interval: list = None, epsilon: float = None):
         """
         Integrate a function by the self Measure.
 
@@ -367,18 +380,19 @@ class Measure:
         """
         # choose the interval to integrate
         if interval is None:
-            interval = self.getInterval()
+            interval = self.interval
         integral = 0
-        epsilon = 10e-4
+        if epsilon is None:
+            epsilon = self.getEpsilon()
         # discretization of the interval
-        x = np.arange(*interval, epsilon)
+        x = np.arange(interval[0], interval[1] + epsilon, epsilon)
         # algorithm
         for xk in x:
             # compute the integral
             integral += epsilon * f(xk) * self(xk)
         return integral
 
-    def repartition(self, epsilon=10e-3):
+    def repartition(self, epsilon=None):
         """
         Repartition function of the measure
 
@@ -397,18 +411,32 @@ class Measure:
             x |-> integral between min(interval) and x of the measure.
         The two lists are the same dimensions and are ready to be plot.
         """
-        epsilon = 10e-4
+        from measures.measures import SumDirac, Dirac
+
+        listDirac = []
+        if isinstance(self, SumDirac):
+            for measure in self.List:
+                if isinstance(measure, Dirac):
+                    listDirac.append(measure.number)
+        if epsilon is None:
+            epsilon = self.getEpsilon()
         # discretization of the interval
         # we start before the min of the interval to have 0
-        x = np.arange(self.interval[0] - epsilon, self.interval[1] + epsilon, epsilon)
+        x = np.arange(
+            self.getInterval()[0] - epsilon, self.getInterval()[1] + epsilon, epsilon
+        )
         # get the length of the discretization
         size = len(x)
         # initialize the return list
         repartitionList = np.zeros(size)
         # travel the interval
         for xk in range(size - 1):
-            # compute the integral between min(interval) and xk
-            repartitionList[xk + 1] = repartitionList[xk] + epsilon * self(x[xk])
+            if len(listDirac) > 0 and x[xk + 1] >= listDirac[0]:
+                repartitionList[xk + 1] = repartitionList[xk] + self(listDirac[0])
+                listDirac.pop(0)
+            else:
+                # compute the integral between min(interval) and xk
+                repartitionList[xk + 1] = repartitionList[xk] + epsilon * self(x[xk])
         return x, repartitionList
 
     def __and__(self, other):
@@ -424,14 +452,27 @@ class Measure:
         """
         from measures.measures import Dirac
 
+        if isinstance(other, Dirac) and isinstance(self, Dirac):
+            return Dirac(
+                self.number + other.number,
+                self.interval,
+                lambda x: self.function(self.number) * other.function(x - self.number),
+            )
+
         # if the second measure is a Dirac
         if isinstance(other, Dirac):
             # just modify the measure function
-            return Measure(lambda x: self(x - other.number), self.interval)
+            return Measure(
+                lambda x: other.function(other.number) * self(x - other.number),
+                self.interval,
+            )
         # if self is a Dirac measure
         if isinstance(self, Dirac):
             # just modify the second measure function
-            return Measure(lambda x: other(x - self.number), other.interval)
+            return Measure(
+                lambda x: self.function(self.number) * other(x - self.number),
+                other.interval,
+            )
 
         # defintion of the convolution
         def convolution(f, g, x):
@@ -469,10 +510,10 @@ class Measure:
 
     def getEpsilon(self):
         if self.epsilon is None:
-            self.epsilon = (self.getInterval()[1] - self.getInterval()[0]) / 1000
+            self.epsilon = 1e-3 * 10 ** (int(np.log10(self.intervalRange())))
         return self.epsilon
 
-    def getMinSupport(self):
+    def getMinSupport(self, precision: float = 1e-3):
         """
         Get the minimum of the support of a measure.
 
@@ -486,10 +527,8 @@ class Measure:
         if self.minSupport is not None:
             return self.minSupport
         else:
-            # the precision of the return
-            epsilon = 1e-3
             # discretization of the interval upside down
-            x = np.arange(self.interval[0], self.interval[1], epsilon)
+            x = np.arange(self.getInterval()[0], self.getInterval()[1], precision)
             # we going to the lowest value
             for xk in x:
                 # print(xk)
@@ -499,10 +538,10 @@ class Measure:
                     self.minSupport = round(xk, 3)
                     return self.minSupport
             # if it is the null function, get the last value
-            self.minSupport = self.interval[1]
+            self.minSupport = self.getInterval()[1]
             return self.minSupport
 
-    def getMaxSupport(self):
+    def getMaxSupport(self, precision: float = 1e-3):
         """
         Get the maximum of the support of a measure.
 
@@ -516,10 +555,8 @@ class Measure:
         if self.maxSupport is not None:
             return self.maxSupport
         else:
-            # the precision of the return
-            epsilon = 10e-4
             # discretization of the interval upside down
-            x = np.arange(self.interval[1], self.interval[0], -epsilon)
+            x = np.arange(self.interval[1], self.interval[0], -precision)
             # we going to the lowest value
             for k in range(len(x)):
                 # check if the values are different of zero
@@ -537,6 +574,13 @@ class Measure:
 
     def getInterval(self):
         return self.interval
+
+    def intervalRange(self):
+        interval = self.getInterval()
+        return interval[1] - interval[0]
+
+    def isDirac(self):
+        return False
 
     def isProbability(self, epsilon: float = 0.001):
         """
@@ -563,7 +607,13 @@ class Measure:
         """
         Normalize the measure to get a probability measure
         """
-        return self.__truediv__(self.integrate())
+        integral = self.integrate()
+        if integral == 0:
+            raise Exception(
+                "Can not normalize the measure because the integral is zero."
+            )
+        else:
+            return self.__truediv__(integral)
 
     def plot(
         self,
@@ -572,6 +622,7 @@ class Measure:
         loc: str = "best",
         interval: list = None,
         setxlim: list = None,
+        inf: bool = False,
     ):
         """
         plot the measure on the interval.
@@ -595,19 +646,19 @@ class Measure:
         # put lines to delimitate the interval of the measure
         if interval is not None:
             # if the first value is different
-            if interval[0] != self.interval[0]:
+            if interval[0] != self.getInterval()[0]:
                 # we add the line
                 axvline(interval[0], color="goldenrod", linestyle="--")
             # if the second value is different
-            if interval[1] != self.interval[1]:
+            if interval[1] != self.getInterval()[1]:
                 # we add the line
                 axvline(interval[1], color="goldenrod", linestyle="--")
         # if interval is not specified, we just get the interval of the measure
         else:
-            interval = self.interval
+            interval = self.getInterval()
         # discretization of the interval
-        epsilon = 10e-3
-        x = np.arange(self.interval[0], self.interval[1] + epsilon, epsilon)
+        epsilon = self.getEpsilon()
+        x = np.arange(self.getInterval()[0], self.getInterval()[1] + epsilon, epsilon)
         # compute the measure
         y = self(x)
         # plot of the function measure

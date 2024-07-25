@@ -1,5 +1,15 @@
 import numpy as np
-from matplotlib.pyplot import close, legend, plot, savefig, title, xlabel, xlim, ylim
+from matplotlib.pyplot import (
+    close,
+    legend,
+    plot,
+    savefig,
+    title,
+    xlabel,
+    xlim,
+    ylim,
+    axvline,
+)
 
 from measures.measures import Dirac, Id, Measure, OneMeasure
 from models.selection_mutation_model import SelectionMutation
@@ -142,53 +152,6 @@ class Kingman(SelectionMutation):
             epsilon=0.001,
         )
 
-    def animation(self, path: str = "resultats/convergence.gif"):
-        """
-        Create an animation gif of the convergence.
-
-        Parameters
-        ----------
-        path : str, optional
-            The path of the gif save.
-            The default is "resultats/convergence.gif".
-        """
-        super().animation("coucou.gif", 200)
-        return
-        # create the folder
-        self.gifPrevention("GIF")
-
-        # get the theorical limit
-        limit = self.getLimit()
-        # get the interval of convergence
-        interval = self.getInterval(0.025)
-        # get the maximum of support of p0
-        eta0 = self.getP0().getMaxSupport()
-        # number of iteration
-        N = 200
-
-        # creation of the function into the algorithm
-        def iterativeSave(measure, i):
-            limit.plot(color="red", label="limit")
-            # saving the measure's plot
-            measure.save(
-                filename=f"GIF//{i}.png",
-                label=f"iteration {i}\n$p_n(\\eta_0) = $ "
-                + f"{np.round(measure.function(eta0), 2)}",
-                color="green",
-                loc="upper left",
-                interval=interval,
-            )
-
-        # call the algorithm
-        measure = self.convergenceWithFunction(iterativeSave, N=N, k=1)
-        # save one last time
-        iterativeSave(measure, N)
-
-        # get every file name that have been saved
-        filenames = [f"GIF//{i}.png" for i in range(N + 1)]
-        # create the gif
-        self.gifCreation(path, filenames, True)
-
     def animationBeta(self, path: str = "resultats/convergenceBeta.gif"):
         """
         Create an animation of the difference of the theorical limit and the
@@ -277,55 +240,51 @@ class Kingman(SelectionMutation):
         # create the gif
         self.gifCreation(path, filenames, True)
 
-    def gammaRepartitionPlot(self, alpha, a, N=100):
-        # qet the parameters
+    def gammaRepartitionPlot(self, alpha: float, a: float, N: int = 100):
+        # get the parameters
         p0, beta, q = self.getAll()
         gammaMeasure = Measure(
             lambda x: x ** (alpha - 1) * np.exp(-x), interval=[0, a]
         ).normalize()
-        gammaConstant = (1 - beta * q.integrate(lambda x: 1 / (1 - x))) / (
-            gammaMeasure.integrate()
-        )
-        # gammaMeasure*=(1 - beta*q.integrate(lambda x: 1/(1-x)))
 
         self.gifPrevention()
-        iterations = np.arange(a + 1, N, 1)
-        epsilon = 0.01
+        epsilon = 1e-1
         x, limit = gammaMeasure.repartition(epsilon)
-        xr = x[::-1]
+        print(x, limit)
         size = len(x)
 
-        """x = np.arange(self.interval[0] - epsilon, self.interval[1], epsilon)
-        size = len(x)
-        repartitionList = np.zeros(size)
-        for xk in range(size-1):
-            repartitionList[xk+1] = repartitionList[xk] + epsilon*self(x[xk])
-        return x, repartitionList"""
+        plot(x, limit, label="limit", color="red")
 
         def iterativeSave(measure, i):
-            if i <= a:
-                pass
-            else:
+            if i > a:
+                newMeasure = Measure(lambda x: measure(1 - x / i), [0, a]).normalize()
+                newMeasure.plot(color="green", label="density new Measure")
+                print(newMeasure.integrate())
 
-                repartitionPn = np.zeros(size)
+                x, repartitionPn = newMeasure.repartition(epsilon)
+                print(x, repartitionPn)
+
+                """ repartitionPn = np.zeros(size)
                 for xk in range(size - 1):
-                    repartitionPn[xk + 1] = repartitionPn[xk] + epsilon / i * measure(
+                    repartitionPn[xk + 1] = repartitionPn[xk] + epsilon * measure(
                         1 - x[xk] / i
                     )
-                repartitionPn /= measure.integrate(interval=[1 - a / i, 1])
-                plot(x, limit, label="limit", color="red")
-                plot(x, repartitionPn, label=r"$p_{" + str(i) + "}$", color="green")
+                repartitionPn /= measure.integrate(interval=[1 - a / i, 1]) * i """
+
+                """ measure.plot(label="measure")
+                axvline(1 - 2 / 90) """
+                plot(x, repartitionPn, label=r"$p_{" + str(i) + "}$")
                 xlabel(f"x between 0 and {a}")
                 title("Repartition function of the $p_n$ and the gamma law.")
                 legend()
-                savefig(f"GIF/{i}.png")
-                close()
+                # savefig(f"GIF/{i}.png")
+                # close()
 
-        self.convergenceWithFunction(iterativeSave, N, 1)
-
-        filenames = [f"GIF//{i}.png" for i in iterations]
+        self.convergenceWithFunction(iterativeSave, N, 90)
+        savefig("fffff.png")
+        filenames = [f"GIF//{i}.png" for i in range(a + 1, N)]
         # create the gif
-        self.gifCreation("okok.gif", filenames, True)
+        # self.gifCreation("figures/gamma_repartition.gif", filenames, True)
 
     def gammaDensityPlot(self, alpha, a, N=100):
         gammaMeasure = Measure(
@@ -342,7 +301,9 @@ class Kingman(SelectionMutation):
                 µ.save(f"GIF/{i}.png", label=r"$p_{" + str(i) + "}$", color="green")
 
         self.convergenceWithFunction(iterativeSave, N, 1)
-        self.gifCreation("okok.gif", [f"GIF/{i}.png" for i in range(a + 1, N)], True)
+        self.gifCreation(
+            "figures/gamma_density.gif", [f"GIF/{i}.png" for i in range(a + 1, N)], True
+        )
 
 
 """ def TimeDifference():
@@ -379,30 +340,33 @@ class Kingman(SelectionMutation):
  """
 
 
-alpha = 3
+def animation_convergence(p0, beta, q):
+    model = Kingman(p0, beta, q)
+    model.animation("figures/Kingman/convergence.gif", N=100)
 
 
-def p0fun(x):
-
-    return x <= 0.5
-
-
-p0 = Measure(p0fun)
-p0 = p0 / p0.integrate()
-q = Measure(lambda x: (alpha) * (1 - x) ** (alpha - 1))
-q = Measure(lambda x: x <= 0.4).normalize()
-# q.save()
-h = 0.0001
+def animation_repartition(p0, beta, q):
+    kingman = Kingman(p0, beta, q)
+    kingman.animationRepartition(N=300)
 
 
-beta = 0.1
+def main():
+    alpha = 3
+    p0 = Measure(lambda x: x <= 1).normalize()
+    beta = 0.1
+    q = Measure(lambda x: (x <= 0.9) * alpha * (1 - x) ** (alpha - 1)).normalize()
+    kingman = Kingman(p0, beta, q)
+    kingman.animationRepartition(N=300)
 
 
-kingman = Kingman(p0, beta, q)
-kingman.animation("figures/kingman.gif")
+def animation_repartition_gamma():
+    alpha = 3
+    p0 = OneMeasure()
+    beta = 0.1
+    q = Measure(lambda x: alpha * (1 - x) ** (alpha - 1)).normalize()
+    h = 1e-3
 
-
-# TimeDifference()
-# savefig("difference mesures.png")
-# kingman.animationEta_q()
-# kingman.gammaDensityPlot(alpha, 10, N=300)
+    print(q.integrate(interval=[1 - h, 1], epsilon=h / 100) / (h**alpha))
+    model = Kingman(p0, beta, q)
+    # model.animation()
+    model.gammaRepartitionPlot(alpha, 10, 100)

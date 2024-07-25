@@ -41,6 +41,25 @@ def zeroBijection(function, interval=[0, 1], epsilon=0.001):
     raise Exception("No zero found on the interval")
 
 
+def convertTime(seconds):
+    seconds = int(seconds)
+    minutes = int(seconds / 60)
+    seconds -= 60 * minutes
+    hours = int(minutes / 60)
+    minutes -= 60 * hours
+    days = int(hours / 24)
+    hours -= 24 * days
+    string = ""
+    if days != 0:
+        string += str(days) + " days, " + str(hours) + " h, " + str(minutes) + " min, "
+    elif hours != 0:
+        string += str(hours) + " h, " + str(minutes) + " min, "
+    elif minutes != 0:
+        string += str(minutes) + " min, "
+    string += str(seconds) + " s"
+    return string
+
+
 #####################################################################
 #                                                                   #
 #                      RANDOM THINGS                                #
@@ -117,13 +136,3 @@ def ani(arange, filename):
 # for k in a:
 #     if k >= 0 and k <= 1:
 #         b.append(k)
-
-
-a = lambda x: x
-
-
-def b(x):
-    return a(x)
-
-
-print(a(2))

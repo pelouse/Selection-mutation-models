@@ -32,6 +32,7 @@ class Dirac(Measure):
         self.number = number
         # the function in front of the dirac (f*dirac)
         self.f = function
+        self.List = []
 
     def __call__(self, x):
         """
@@ -55,10 +56,14 @@ class Dirac(Measure):
                 values[k] = self(x[k])
             return values
         except:
+            x = round(x, self.precision)
             if x == self.number:
                 return self.f(x) * (self.interval[0] <= x and x <= self.interval[1])
             else:
                 return 0
+
+    def getDiracNumbers(self):
+        return [self.number]
 
     def plot(
         self,
@@ -67,6 +72,7 @@ class Dirac(Measure):
         loc: str = "best",
         interval: list = None,
         setxlim: list = None,
+        inf: bool = False,
     ):
         """
         Plot the dirac density.
@@ -116,7 +122,10 @@ class Dirac(Measure):
         y = self(x)
         # plot of the function measure
         plot(x, y, label=label, color=color)
-        scatter(self.number, self(self.number), color=color, label=label)
+        if inf:
+            axvline(self.number, color=color)
+        else:
+            scatter(self.number, self(self.number), color=color)
         # ylim bottom is the minimum of the function or 0
         # ylim top is the maximum of the function or the previous ylim
         previous_ylim = ylim()
@@ -240,12 +249,20 @@ class Dirac(Measure):
         """
         from measures.sumDirac import SumDirac
 
+        if isinstance(other, Dirac) and self.number == other.number:
+            return Dirac(
+                self.number,
+                self.getInterval(),
+                lambda x: self.function(x) + other.function(x),
+            )
         # if other is a Measure
         if isinstance(other, Measure):
             # return the sum of the two measures
             return SumDirac([self, other])
         # if other is a float
         else:
+            if other == 0:
+                return self
             # transform other into a measure
             return SumDirac([self, OneMeasure() * other])
 
@@ -288,3 +305,22 @@ class Dirac(Measure):
         """
         newD = -1 * self
         return newD + other
+
+    def exp(self):
+        return Dirac(
+            self.number, self.getInterval(), lambda x: np.exp(self.function(x))
+        )
+
+    def abs(self):
+        return Dirac(
+            self.number, self.getInterval(), lambda x: np.abs(self.function(x))
+        )
+
+    def isDirac(self):
+        return True
+
+    def random(self, N: int = 1):
+        if N == 1:
+            return self.number
+        else:
+            return np.array([self.number for _ in range(N)])

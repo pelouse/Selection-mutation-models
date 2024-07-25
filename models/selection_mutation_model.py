@@ -3,15 +3,26 @@ import time
 
 import imageio.v2 as imageio
 import numpy as np
-from matplotlib.pyplot import legend, plot, title, xlabel, ylabel
+from matplotlib.pyplot import (
+    legend,
+    plot,
+    title,
+    xlabel,
+    ylabel,
+    xlim,
+    savefig,
+    close,
+    ylim,
+)
 
 from measures.measures import Dirac, Measure, SumDirac
 
 
 class SelectionMutation:
 
-    def __init__(self, equation, init, params: list = None,
-                 indexesOfDependent: list = []):
+    def __init__(
+        self, equation, init, params: list = None, indexesOfDependent: list = []
+    ):
         """
         Constructor
 
@@ -75,7 +86,7 @@ class SelectionMutation:
         """
         # if there is no parameter
         if self.params is None:
-            return self.equation(measure)
+            newMeasure = self.equation(measure)
         # if there are parameters
         else:
             # get all the values of parameters
@@ -90,7 +101,14 @@ class SelectionMutation:
                     # else, we just take the parameter
                     params.append(self.params[k])
             # finally, we use the values in the equation
-            return self.equation(measure, *params)
+            newMeasure = self.equation(measure, *params)
+        epsilon = newMeasure.getEpsilon()
+        x = np.arange(
+            newMeasure.getInterval()[0], newMeasure.getInterval()[1] + epsilon, epsilon
+        )
+        # compute the measure
+        newMeasure(x)
+        return newMeasure
 
     def convergenceWithFunction(self, function, N: int = 100, k: int = 1):
         """
@@ -140,9 +158,11 @@ class SelectionMutation:
         Measure
             The algorithm will converges into this measure.
         """
+
         # definition of a function that do nothing
         def nothing(measure, i):
             pass
+
         # call the algorithm but doing nothing
         return self.convergenceWithFunction(nothing, N=N, k=N + 1)
 
@@ -159,10 +179,12 @@ class SelectionMutation:
             If k = 2, the function will be called every two iterations.
             The default is 10.
         """
+
         # the function that will be called during the algorithm
         def iterativePlot(measure, i):
             # ploting the actual measure
             measure.plot("iteration " + str(i))
+
         # calling the algorithm
         measure = self.convergenceWithFunction(iterativePlot, N=N, k=k)
         # calling the function one last time
@@ -175,8 +197,7 @@ class SelectionMutation:
 
     def gifCreation(self, path: str, filenames: list, loop: bool):
         # creation of the gif
-        with imageio.get_writer(path, mode='I', duration=5,
-                                loop=not loop) as writer:
+        with imageio.get_writer(path, mode="I", duration=5, loop=not loop) as writer:
             for filename in filenames:
                 # read the picture
                 image = imageio.imread(filename)
@@ -185,18 +206,19 @@ class SelectionMutation:
                 # delete the picture
                 os.remove(filename)
 
-    def animation(self,
-                  filename: str = "mygif.gif",
-                  N: int = 100,
-                  loop: bool = True,
-                  interval: list = None,
-                  diracs = []):
+    def animation(
+        self,
+        path: str = "mygif.gif",
+        N: int = 100,
+        loop: bool = True,
+        interval: list = None,
+    ):
         """
         Create an animation gif to see the convergence of the measures.
 
         Parameters
         ----------
-        filename : str
+        path : str
             The path to save the gif.
         N : int, optional
             The number of iteration for the algorithm and the number of frame
@@ -206,7 +228,7 @@ class SelectionMutation:
             Is the gif doing a loop.
             The value is True if yes and False if no.
             The default is True.
-        interval: list, optional
+        interval : list, optional
             prevent the model to be plot outside interval.
             If it is not specified, will plot the meausre on the whole interval
         """
@@ -215,53 +237,32 @@ class SelectionMutation:
 
         limit = self.getLimit()
         renormalize = []
-        if isinstance(limit, SumDirac):
-            for measure in limit.List:
-                if isinstance(measure, Dirac):
-                    renormalize.append(measure.number)
-                else:
-                    a = measure.integrate()
-        renormalize.sort()
+        if limit is not None and limit.isDirac():
+            renormalize = limit.getDiracNumbers()
+            # renormalize = [k + 0.1 for k in range(11)]
+
         # creation of the function into the algorithm
         def iterativeSave(measure, i):
             if limit is not None:
-                # plot the limit if specified
-                limit.plot(color="red", label="limit")
-                if len(renormalize) != 0:
-                    """ def fun(x):
-                        if x in renormalize:
-                            return measure(x)/sum(measure(renormalize))
-                        else:
-                            return measure(x)
-                    f = np.vectorize(fun)
-                    µ = Measure(f, measure.interval) """
-                    
-                    autour = (measure.interval[1]-measure.interval[0])/10
-                    # a = sum(measure(renormalize))
-                    a = 0
-                    a += measure.integrate(interval=[0, renormalize[0] - autour])
-                    rdown = np.array(renormalize) + autour
-                    rup = np.array(renormalize) - autour
-                    for k in range(1, len(renormalize)):
-                        a += measure.integrate(interval=[rdown[k-1], rup[k]])
-                    def fun(x):
-                        for k in range(len(renormalize)):
-                            if rup[k] <= x <= rdown[k]:
-                                return max(measure(x)/sum(measure(renormalize)) - a,0)
-                        return measure(x)
-                    f = np.vectorize(fun)
-                    µ = Measure(f, measure.interval)
-                    # µ = measure/sum(measure(renormalize))
+                if len(renormalize) > 0:
+                    limit.plot(color="red", label="limit", inf=False)
+                    measure = measure / sum(measure(renormalize))
                 else:
-                    µ = measure
-            epsilon = measure.getEpsilon()
+                    limit.plot(color="red", label="limit", inf=True)
+            epsilon = 10 * measure.getEpsilon()
             # saving the measure's plot
-            µ.save(filename=f'GIF//{i}.png',
-                         label=f'iteration {i}',
-                         color="green",
-                         loc="upper left",
-                         interval=interval,
-                         setxlim=[measure.interval[0]-epsilon, measure.interval[1]+epsilon])
+            measure.save(
+                filename=f"GIF//{i}.png",
+                label=f"iteration {i}",
+                color="green",
+                loc="upper left",
+                interval=interval,
+                setxlim=[
+                    measure.getInterval()[0] - epsilon,
+                    measure.getInterval()[1] + epsilon,
+                ],
+            )
+            print(str(i) + "/" + str(N))
 
         # call the algorithm
         measure = self.convergenceWithFunction(iterativeSave, N=N, k=1)
@@ -269,15 +270,60 @@ class SelectionMutation:
         iterativeSave(measure, N)
 
         # get every file name that have been saved
-        filenames = [f'GIF//{i}.png' for i in range(N+1)]
+        filenames = [f"GIF//{i}.png" for i in range(N + 1)]
         # creating the gif
-        self.gifCreation(filename, filenames, loop)
+        self.gifCreation(path, filenames, loop)
 
-    def animationParameter(self,
-                           parameterIndex: int,
-                           arange: list,
-                           filename: str = "mygif.gif",
-                           loop: bool = True):
+    def animationRepartition(
+        self,
+        path: str = "mygif.gif",
+        N: int = 100,
+        loop: bool = True,
+        interval: list = None,
+    ):
+        # create the folder if not exists
+        self.gifPrevention("GIF")
+
+        limit = self.getLimit()
+        if limit is not None:
+            x, repartitionLimit = limit.repartition()
+
+        # creation of the function into the algorithm
+        def iterativeSave(measure, i):
+            """limit.plot(color="red")
+            measure.save(f"GIF//{52+i}.png", color="green")
+            print(measure.integrate())"""
+
+            if limit is not None:
+                # plot the limit if specified
+                plot(x, repartitionLimit, color="red", label="limit")
+            print(measure.integrate())
+            plot(*measure.repartition(), color="green", label=f"iteration {i}")
+
+            epsilon = measure.getEpsilon()
+            xlim(measure.getInterval()[0] - epsilon, measure.getInterval()[1] + epsilon)
+            ylim(0)
+            legend(loc="upper left")
+            savefig(f"GIF//{i+1}.png")
+            close()
+
+        # call the algorithm
+        measure = self.convergenceWithFunction(iterativeSave, N=N, k=1)
+        # save one last time
+        iterativeSave(measure, N)
+
+        # get every file name that have been saved
+        filenames = [f"GIF//{i}.png" for i in range(N + 1)]
+        # creating the gif
+        # self.gifCreation(path, filenames, loop)
+
+    def animationParameter(
+        self,
+        parameterIndex: int,
+        arange: list,
+        filename: str = "mygif.gif",
+        loop: bool = True,
+    ):
         """
         Create an animation gif to see the limit measure according to a
         parameter.
@@ -314,25 +360,28 @@ class SelectionMutation:
             # get the limit measure by algorithm
             measure = self.convergence()
             # save the plot
-            measure.save(f'GIF//{k}.png', f'beta = {arange[k]}',
-                         "green", loc='upper left')
+            measure.save(
+                f"GIF//{k}.png", f"beta = {arange[k]}", "green", loc="upper left"
+            )
         # at the end we change to the initial value
         self.setParam(saveParam, parameterIndex)
         # get every file name that have been saved
-        filenames = [f'GIF//{i}.png' for i in range(N)]
+        filenames = [f"GIF//{i}.png" for i in range(N)]
         # creating the gif
         self.gifCreation(filename, filenames, loop)
 
-    def timeDifferenceBetweenTwoMeasures(self,
-                                         init1: Measure,
-                                         init2: Measure,
-                                         params1: list,
-                                         params2: list,
-                                         equation1,
-                                         equation2,
-                                         N: int,
-                                         label1: str,
-                                         label2: str):
+    def timeDifferenceBetweenTwoMeasures(
+        self,
+        init1: Measure,
+        init2: Measure,
+        params1: list,
+        params2: list,
+        equation1,
+        equation2,
+        N: int,
+        label1: str,
+        label2: str,
+    ):
         """
         Plot the curve of the time used to compute according to iteration
         number of the algorithm

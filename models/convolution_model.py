@@ -3,7 +3,7 @@ import time as tea
 import numpy as np
 from matplotlib.pyplot import plot, scatter, show, xlim, ylim
 
-from measures.measures import Dirac, Id, Measure
+from measures.measures import Dirac, Id, Measure, SumDirac
 from models.selection_mutation_model import SelectionMutation
 
 
@@ -17,17 +17,15 @@ def equation(pn, beta, j, I):
 class Cmodel(SelectionMutation):
     def __init__(self, p0, beta, j, I=[0, 10]):
         super().__init__(equation, p0, [beta, j, I])
-        if I[0] != 0:
-            print("Warning : Lower bound not equals to zero.")
 
     def getBeta(self):
-        self.getParam(0)
+        return self.getParam(0)
 
     def getJ(self):
-        self.getParam(1)
+        return self.getParam(1)
 
     def getI(self):
-        self.getParam(2)
+        return self.getParam(2)
 
     def getLimit(self):
         beta, j, I = self.getParams()
@@ -38,7 +36,7 @@ class Cmodel(SelectionMutation):
             print("Error : Interval too small.")
             return
         else:
-            eta0 = self.getInit().getMinSupport()
+            eta0 = self.getInit().getMinSupport(1e-2)
             a = j.number
             prod = 1
             N = 300
@@ -54,104 +52,182 @@ class Cmodel(SelectionMutation):
             for i in range(1, size):
                 ps[i] = ps[i - 1] * beta / (1 - np.exp(-i * a))
             limit = sum(ps[k] * Dirac(a * k + eta0, I) for k in range(size))
-
             return limit
 
+    def diracDistinction(self, dirac: SumDirac):
+        a = self.getJ().number
+        independantMeasures = []
+        independantNumbers = []
+        numbers = dirac.getDiracNumbers()
+        saved = False
+        for d in dirac.List:
+            for k in range(len(independantMeasures)):
+                if d.number == independantNumbers[k][-1] + a:
+                    independantMeasures[k].append(d)
+                    independantNumbers[k].append(d.number)
+                    saved = True
+            if not saved:
+                independantMeasures.append([d])
+                independantNumbers.append([d.number])
+            saved = False
+        return independantMeasures
 
-def main():
-    start = tea.time()
+    def iteration(self, measure: Measure):
+        if not measure.isDirac():
+            return super().iteration(measure)
+        else:
+            beta, j, I = self.getParams()
+            eta0 = self.getInit().getMinSupport(1e-2)
+            a = j.number
+            if isinstance(measure, Dirac):
+                numberMaxOfDirac = int((I[1] - eta0) / a + 1)
+                pn = np.zeros(numberMaxOfDirac)
+                pn[0] = 1
+                wn = sum(
+                    np.exp(-(a * k + eta0)) * pn[k] for k in range(numberMaxOfDirac)
+                )
+                pn1 = np.zeros(numberMaxOfDirac)
+                pn1[0] = (1 - beta) * np.exp(-(eta0)) * pn[0] / wn
+                for k in range(numberMaxOfDirac - 1):
+                    pn1[k + 1] = (
+                        beta * pn[k]
+                        + (1 - beta) * np.exp(-(a * k + a + eta0)) * pn[k + 1] / wn
+                    )
 
-    I = [0, 20]
+                return sum(
+                    pn1[k] * Dirac(a * k + eta0, I) for k in range(numberMaxOfDirac)
+                )
+            else:
+                wn = sum(
+                    [
+                        np.exp(-dirac.number) * dirac(dirac.number)
+                        for dirac in measure.List
+                    ]
+                )
+                distinction = self.diracDistinction(measure)
+                returnMeasure = 0
+                for iteration in distinction:
+                    pn = [dirac(dirac.number) for dirac in iteration]
+                    pn1 = np.zeros(len(pn) + (iteration[-1].number + a <= I[1]))
+                    pn1[0] = (1 - beta) * np.exp(-iteration[0].number) * pn[0] / wn
+                    for k in range(len(pn) - 1):
+                        pn1[k + 1] = (
+                            beta * pn[k]
+                            + (1 - beta)
+                            * np.exp(-iteration[k + 1].number)
+                            * pn[k + 1]
+                            / wn
+                        )
+                    if iteration[-1].number + a <= I[1]:
+                        pn1[-1] = beta * pn[-1]
+                    returnMeasure += sum(
+                        pn1[k] * Dirac(iteration[0].number + a * k, I)
+                        for k in range(len(pn1))
+                    )
+                return returnMeasure
+            """ beta, j, I = self.getParams()
+            eta0 = self.getInit().getMinSupport(1e-2)
+            a = j.number
+            numberMaxOfDirac = int((I[1] - eta0) / a + 1)
+            parameterDiracList = [eta0 + k * a for k in range(numberMaxOfDirac)]
+            pn = np.zeros(numberMaxOfDirac)
+            if isinstance(measure, Dirac):
+                pn[0] = 1
+            else:
+                for k in range(numberMaxOfDirac):
+                    pn[k] = measure.List[k].function(a * k + eta0)
+            wn = sum(np.exp(-(a * k + eta0)) * pn[k] for k in range(numberMaxOfDirac))
+            pn1 = np.zeros(numberMaxOfDirac)
+            pn1[0] = (1 - beta) * np.exp(-(eta0)) * pn[0] / wn
+            for k in range(numberMaxOfDirac - 1):
+                pn1[k + 1] = (
+                    beta * pn[k]
+                    + (1 - beta) * np.exp(-(a * k + a + eta0)) * pn[k + 1] / wn
+                )
 
-    def f(x):
-        return (x >= 1) * np.exp(x)
+            return sum(pn1[k] * Dirac(a * k + eta0, I) for k in range(numberMaxOfDirac)) """
 
-    p0 = Measure(f, I).normalize()
-    j = Dirac(2.5)
-    beta = 0.5
+    """ def animation(
+        self,
+        path: str = "mygif.gif",
+        N: int = 100,
+        loop: bool = True,
+        interval: list = None,
+    ):
+        p0 = self.getInit()
+        if not (
+            isinstance(p0, Dirac) or (isinstance(p0, SumDirac) and p0.isOnlyDirac())
+        ):
+            super().animation(path, N, loop, interval)
+        else:
+            beta, I = self.getBeta(), self.getI()
+            limit = self.getLimit()
+            parameterDiracList = limit.getDiracNumbers()
+            size = len(parameterDiracList)
+            self.gifPrevention()
+            pn = np.zeros(size)
+            if isinstance(p0, Dirac):
+                pn[0] = 1
+            else:
+                numberDiracInit = len(p0.List)
+                numberDiracInit = min(numberDiracInit, size)
+                for k in range(numberDiracInit):
+                    pn[k] = p0.List[k].function(parameterDiracList[k])
+
+            epsilon = 10 * limit.getEpsilon()
+            for n in range(N):
+                limit.plot(label="limit", color="red")
+                measure = sum(
+                    pn[k] * Dirac(parameterDiracList[k], I) for k in range(size)
+                )
+                measure.save(
+                    filename=f"GIF//{n}.png",
+                    label=f"iteration {n}",
+                    color="green",
+                    loc="upper left",
+                    interval=interval,
+                    setxlim=[
+                        limit.getInterval()[0] - epsilon,
+                        limit.getInterval()[1] + epsilon,
+                    ],
+                )
+                wn = sum(np.exp(-parameterDiracList[k]) * pn[k] for k in range(size))
+                pn1 = np.zeros(size)
+                pn1[0] = (1 - beta) * np.exp(-parameterDiracList[0]) * pn[0] / wn
+                for k in range(size - 1):
+                    pn1[k + 1] = (
+                        beta * pn[k]
+                        + (1 - beta)
+                        * np.exp(-parameterDiracList[k + 1])
+                        * pn[k + 1]
+                        / wn
+                    )
+                pn = pn1
+                print(str(n) + "/" + str(N))
+            limit.plot(label="limit", color="red")
+            measure = sum(pn[k] * Dirac(parameterDiracList[k]) for k in range(size))
+            measure.save(
+                filename=f"GIF//{N}.png",
+                label=f"iteration {N}",
+                color="green",
+                loc="upper left",
+                interval=interval,
+                setxlim=[
+                    limit.getInterval()[0] - epsilon,
+                    limit.getInterval()[1] + epsilon,
+                ],
+            )
+            print(str(N) + "/" + str(N))
+            self.gifCreation(path, [f"GIF/{n}.png" for n in range(N + 1)], loop) """
+
+
+def animation_convergence(p0, beta, j, I, N=200):
     model = Cmodel(p0, beta, j, I)
-    model.animation(path="figures/cmodel.gif", N=50)
-    # model.getLimit()
-    print("temps d'execution :", tea.time() - start)
+    model.animation(path="figures/cmodel/convergence.gif", N=N)
     return
 
 
-""" def equationNul(pn, beta, j):
-    return (beta*(pn & j) +
-            (1-beta)*(-IdNul(I)).exp() * pn/pn.integrate(lambda y: np.exp(-y)))
-
-
-p0 = Measure(lambda x: (0 <= x)*(x <= 10), I)
-p0 = p0/p0.integrate()
-# p0 = Dirac(0)
-
-j = Dirac(1, I)
-j = j/j.integrate()
-
-beta = 0.5 """
-
-"""(beta*(pn & j) +
-            (1-beta)*(-Id(I)).exp() * pn/pn.integrate(lambda y: np.exp(-y)))"""
-
-
-# cccccc1 = SelectionMutation(equation, p0, [beta, j])
-
-# cccccc1.timeDifferenceBetweenTwoMeasures(Measure,
-#                                          MeasureNul,
-#                                          lambda x: (0 <= x)*(x <= 10),
-#                                          [0.5, (1,)],
-#                                          [0, 100],
-#                                          equation,
-#                                          equationNul,
-#                                          20,
-#                                          "Computation with memoization",
-#                                          "Computation without memoization",
-#                                          Dirac,
-#                                          DiracNul)
-
-""" 
-model = SelectionMutation(equation, p0, [beta, j]) """
-
-# p = model.convergence(30)
-# print("convergence done")
-
-# print(p.integrate())
-
-""" N = 22
-pis = np.array([p(i) for i in range(N)])
-p = p/sum(pis) """
-
-
-""" print("p0 : ",p0)
-scatter(0, p0)
-xlim(-0.1, 10)
-p.save() """
-
-""" # creation of the function into the algorithm
-def iterativeSave(measure, i):
-    # saving the measure's plot
-    scatter([k for k in range(11)], ps, color="red")
-    xlim(-0.1, I[1])
-    µ = measure/sum([measure(k) for k in range(int(I[1])+1)])
-    µ.save(filename=f'GIF//{i}.png',
-                    label=f'iteration {i}',
-                    color="green",
-                    loc="upper left",
-                    setxlim=[-0.1, I[1]])
-
-# call the algorithm
-N = 50
-measure = model.convergenceWithFunction(iterativeSave, N=N, k=1)
-# save one last time
-iterativeSave(measure, N)
-
-# get every file name that have been saved
-filenames = [f'GIF//{i}.png' for i in range(N+1)]
-# creating the gif
-model.gifCreation("resultats/convergence_cmodel.gif", filenames, False)
-
-
-# Cp = 0
-# for i in range(N):
-#     Cp += pis[i]*np.exp(-i)
-# print(Cp) """
+def animation_repartition(p0, beta, j, I):
+    model = Cmodel(p0, beta, j, I)
+    model.animationRepartition(path="figures/cmodel/repartition.gif", N=50)
+    return
