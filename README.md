@@ -6,3 +6,5 @@ On peut y trouver les mesures continuent ou les mesures de Dirac ansi que des me
 Dans le dossier models, on trouve les différents modèles de selection-mutation qui ont été étudiés.
 
 Dans le dossier figures, on trouve les différents résultats pour chaque modèle.
+
+Le rapport de l'étude peut être lu dans le fichier rapport.pdf
